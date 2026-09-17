@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
-    {name = "Collar", email = "dev@collar.xyz"},
+    {name = "Collar"},
 ]
 dependencies = [
     "langchain-core>=0.3.0",
@@ -22,6 +22,7 @@ dependencies = [
 Homepage = "https://collar-b46l.onrender.com"
 Documentation = "https://backendai-x4m1.onrender.com/docs.html"
 Repository = "https://github.com/aiguardrail/collar-langchain"
+Twitter = "https://x.com/collarfamily"
 
 [tool.hatch.build.targets.wheel]
 packages = ["langchain_collar"]
