@@ -4,6 +4,7 @@
 checks for AI trading agents on Robinhood Chain.
 
 [![PyPI version](https://img.shields.io/pypi/v/langchain-collar.svg)](https://pypi.org/project/langchain-collar/)
+[![PyPI downloads](https://img.shields.io/pypi/dm/langchain-collar.svg)](https://pypi.org/project/langchain-collar/)
 [![Python versions](https://img.shields.io/pypi/pyversions/langchain-collar.svg)](https://pypi.org/project/langchain-collar/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
@@ -12,7 +13,7 @@ checks for AI trading agents on Robinhood Chain.
 ## What is this?
 
 This package wraps the [Collar Guardrail](https://collar-b46l.onrender.com)
-MCP server as native LangChain tools. Any LangChain agent can now evaluate
+MCP server as native LangChain tools. Any LangChain agent can evaluate
 proposed trades against a deterministic risk policy **before** executing
 them — with `allow` / `warn` / `deny` verdicts, a 0–100 risk score, and a
 tamper-evident SHA-256 audit hash.
@@ -35,7 +36,7 @@ Requires Python 3.10+ and `langchain-core>=0.3.0`.
 
 ## Quick Start
 
-### 1. Add the tools to any LangChain agent
+### Add tools to a LangChain agent
 
 ```python
 from langchain_collar import get_tools
@@ -57,7 +58,7 @@ result = agent.invoke({
 print(result)
 ```
 
-### 2. Or call a tool directly
+### Or call a tool directly
 
 ```python
 from langchain_collar import evaluate_trade
@@ -96,8 +97,10 @@ https://backendai-x4m1.onrender.com/mcp-http/mcp
 
 The MCP transport is **Streamable HTTP** (protocol version `2025-06-18`).
 No API key is required for the MCP endpoint — every call is evaluated at a
-fixed **Tier 1 ceiling ($5,000 notional)**. For higher limits, use the
-REST API with wallet-signature authentication (see the [Collar docs](https://backendai-x4m1.onrender.com/docs.html)).
+fixed **Tier 1 ceiling ($5,000 notional)**.
+
+For higher limits ($25K / $100K), use the REST API with wallet-signature
+authentication. See the [Collar docs](https://backendai-x4m1.onrender.com/docs.html).
 
 ---
 
@@ -152,10 +155,18 @@ if '"decision": "deny"' in verdict:
 
 ---
 
+## Paid Tier (x402)
+
+For high-volume agent traffic, Collar exposes an x402 payment endpoint at
+`POST /api/x402/analyze` — **$0.01 USDG per call** on Robinhood Chain,
+no signup required. See the [x402 discovery document](https://backendai-x4m1.onrender.com/.well-known/x402.json).
+
+---
+
 ## Configuration
 
-The package talks to the public Collar MCP endpoint by default. If you are
-self-hosting Collar, override the base URL:
+The package talks to the public Collar MCP endpoint by default. To
+self-host Collar, override the base URL:
 
 ```python
 import langchain_collar.tools as tools
@@ -175,6 +186,7 @@ tools._MCP_ENDPOINT = f"{tools._BASE_URL}/mcp-http/mcp"
 | **Agent Integration Guide** | https://backendai-x4m1.onrender.com/agent-docs.html |
 | **API Reference** | https://backendai-x4m1.onrender.com/docs.html |
 | **MCP Registry** | `io.github.aiguardrail/backend` |
+| **PyPI** | https://pypi.org/project/langchain-collar/ |
 
 ---
 
