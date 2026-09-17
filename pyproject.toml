@@ -20,7 +20,7 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://collar-b46l.onrender.com"
-Documentation = "https://backendai-x4m1.onrender.com/docs.html"
+Documentation = "https://collar-b46l.onrender.com/agent-docs.html"
 Repository = "https://github.com/aiguardrail/collar-langchain"
 Twitter = "https://x.com/collarfamily"
 
