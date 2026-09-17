@@ -100,7 +100,7 @@ No API key is required for the MCP endpoint — every call is evaluated at a
 fixed **Tier 1 ceiling ($5,000 notional)**.
 
 For higher limits ($25K / $100K), use the REST API with wallet-signature
-authentication. See the [Collar docs](https://collar-b46l.onrender.com/docs.html).
+authentication. See the [Collar agent docs](https://collar-b46l.onrender.com/agent-docs.html).
 
 ---
 
@@ -181,10 +181,9 @@ tools._MCP_ENDPOINT = f"{tools._BASE_URL}/mcp-http/mcp"
 
 | Resource | URL |
 | :--- | :--- |
-| **Collar Guardrail** | https://collar-b46l.onrender.com |
-| **MCP Server Card** | https://backendai-x4m1.onrender.com/.well-known/mcp/server-card.json |
+| **Collar Guardrail (UI)** | https://collar-b46l.onrender.com |
 | **Agent Integration Guide** | https://collar-b46l.onrender.com/agent-docs.html |
-| **API Reference** | https://collar-b46l.onrender.com/docs.html |
+| **MCP Server Card** | https://backendai-x4m1.onrender.com/.well-known/mcp/server-card.json |
 | **MCP Registry** | `io.github.aiguardrail/backend` |
 | **PyPI** | https://pypi.org/project/langchain-collar/ |
 
