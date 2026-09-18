@@ -79,8 +79,8 @@ print(verdict)
 
 | Tool | Description |
 | :--- | :--- |
-| `evaluate_trade` | **Call before every trade.** Returns `allow` / `warn` / `deny`, reasons, risk score, and audit hash. Treat `deny` as a hard stop. |
-| `check_token_safety` | Honeypot / contract safety check for any ERC-20 token. Returns severity (`safe` / `warn` / `danger`) plus a sell-simulation result. |
+| `evaluate_trade` | **Call before every trade.** Returns `allow` / `warn` / `deny`, reasons, risk score, and audit hash. Treat `deny` as a hard stop. Honeypot findings (severity=danger) from `check_token_safety` automatically force a `deny` regardless of other checks. |
+| `check_token_safety` | Honeypot / contract safety check for any ERC-20 token. Returns severity (`safe` / `warn` / `danger`) plus a sell-simulation result. **When severity=`danger`, the next `evaluate_trade` for the same contract is auto-denied.** |
 | `simulate_balance` | Read-only simulation of a wallet's ERC-20 balance after a hypothetical trade. No transaction is sent. |
 | `get_supported_assets` | The official Robinhood Chain asset registry. Resolve a symbol to its canonical contract address **before** calling `evaluate_trade`. |
 | `verify_audit_trail` | Recomputes every past decision's SHA-256 hash and verifies the hash-chain links. Returns `healthy=true` only if nothing was tampered with. |
@@ -110,7 +110,7 @@ authentication. See the [Collar agent docs](https://collar-b46l.onrender.com/age
 | :--- | :--- | :--- |
 | `allow` | Policy passed. | Safe to execute. |
 | `warn` | Policy soft-violated. | Trade may proceed but is flagged. Reasons prefixed with `ADVISORY:` are non-blocking. |
-| `deny` | Policy hard-violated. | **Do not execute.** Reasons are blocking. |
+| `deny` | Policy hard-violated. | **Do not execute.** Reasons are blocking. Honeypot findings (severity=danger) always produce a deny. |
 
 > **Safety rule:** If a verdict contains an `error` key, no verdict was
 > produced. Treat it as a hard stop. If `decision == "deny"`, do not
@@ -121,6 +121,8 @@ authentication. See the [Collar agent docs](https://collar-b46l.onrender.com/age
 ## Example: Full Pre-Trade Flow
 
 ```python
+import json
+
 from langchain_collar import (
     evaluate_trade,
     get_supported_assets,
@@ -131,11 +133,14 @@ from langchain_collar import (
 assets = get_supported_assets.invoke({})
 print(assets)  # → list of {symbol, contract_address, is_native}
 
-# 2. Optionally check the token for honeypot risk
-safety = check_token_safety.invoke({
+# 2. Check the token for honeypot risk BEFORE evaluating the trade
+safety = json.loads(check_token_safety.invoke({
     "contract_address": "0x<token_address>",
-})
-print(safety)  # → {"severity": "safe", ...}
+}))
+if safety.get("severity") == "danger":
+    raise RuntimeError(
+        f"Token is flagged as dangerous: {safety.get('risk_factors')}"
+    )
 
 # 3. Run the pre-trade risk check
 verdict = evaluate_trade.invoke({
