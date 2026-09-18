@@ -12,7 +12,7 @@ checks for AI trading agents on Robinhood Chain.
 
 ## What is this?
 
-This package wraps the [Collar Guardrail](https://collar-b46l.onrender.com)
+This package wraps the [Collar Guardrail](https://collarguardrail.com)
 MCP server as native LangChain tools. Any LangChain agent can evaluate
 proposed trades against a deterministic risk policy **before** executing
 them — with `allow` / `warn` / `deny` verdicts, a 0–100 risk score, and a
@@ -92,7 +92,7 @@ print(verdict)
 Each tool is a thin wrapper around the Collar Guardrail MCP server at:
 
 ```
-https://backendai-x4m1.onrender.com/mcp-http/mcp
+https://api.collarguardrail.com/mcp-http/mcp
 ```
 
 The MCP transport is **Streamable HTTP** (protocol version `2025-06-18`).
@@ -100,7 +100,7 @@ No API key is required for the MCP endpoint — every call is evaluated at a
 fixed **Tier 1 ceiling ($5,000 notional)**.
 
 For higher limits ($25K / $100K), use the REST API with wallet-signature
-authentication. See the [Collar agent docs](https://collar-b46l.onrender.com/agent-docs.html).
+authentication. See the [Collar agent docs](https://collarguardrail.com/agent-docs.html).
 
 ---
 
@@ -164,7 +164,7 @@ if '"decision": "deny"' in verdict:
 
 For high-volume agent traffic, Collar exposes an x402 payment endpoint at
 `POST /api/x402/analyze` — **$0.01 USDG per call** on Robinhood Chain,
-no signup required. See the [x402 discovery document](https://backendai-x4m1.onrender.com/.well-known/x402.json).
+no signup required. See the [x402 discovery document](https://api.collarguardrail.com/.well-known/x402.json).
 
 ---
 
@@ -186,9 +186,9 @@ tools._MCP_ENDPOINT = f"{tools._BASE_URL}/mcp-http/mcp"
 
 | Resource | URL |
 | :--- | :--- |
-| **Collar Guardrail (UI)** | https://collar-b46l.onrender.com |
-| **Agent Integration Guide** | https://collar-b46l.onrender.com/agent-docs.html |
-| **MCP Server Card** | https://backendai-x4m1.onrender.com/.well-known/mcp/server-card.json |
+| **Collar Guardrail (UI)** | https://collarguardrail.com |
+| **Agent Integration Guide** | https://collarguardrail.com/agent-docs.html |
+| **MCP Server Card** | https://api.collarguardrail.com/.well-known/mcp/server-card.json |
 | **MCP Registry** | `io.github.aiguardrail/backend` |
 | **PyPI** | https://pypi.org/project/langchain-collar/ |
 
