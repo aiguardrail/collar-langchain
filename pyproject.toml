@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "langchain-collar"
-version = "1.0.1"
+version = "1.0.4"
 description = "LangChain tools for Collar Guardrail — deterministic pre-trade risk checks for AI trading agents on Robinhood Chain."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -19,8 +19,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://collar-b46l.onrender.com"
-Documentation = "https://collar-b46l.onrender.com/agent-docs.html"
+Homepage = "https://collarguardrail.com"
+Documentation = "https://collarguardrail.com/agent-docs.html"
 Repository = "https://github.com/aiguardrail/collar-langchain"
 Twitter = "https://x.com/collarfamily"
 
