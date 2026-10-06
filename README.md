@@ -1,3 +1,4 @@
+markdown
 # langchain-collar
 
 **LangChain tools for Collar Guardrail** — deterministic pre-trade risk
@@ -28,17 +29,11 @@ constraints outside your agent's own runtime.
 
 ```bash
 pip install langchain-collar
-```
+Requires Python 3.10+ and langchain-core>=0.3.0.
 
-Requires Python 3.10+ and `langchain-core>=0.3.0`.
-
----
-
-## Quick Start
-
-### Add tools to a LangChain agent
-
-```python
+Quick Start
+Add tools to a LangChain agent
+python
 from langchain_collar import get_tools
 from langchain.agents import create_agent
 
@@ -56,11 +51,8 @@ result = agent.invoke({
     }]
 })
 print(result)
-```
-
-### Or call a tool directly
-
-```python
+Or call a tool directly
+python
 from langchain_collar import evaluate_trade
 
 verdict = evaluate_trade.invoke({
@@ -71,56 +63,42 @@ verdict = evaluate_trade.invoke({
     "amount": 10.0,
 })
 print(verdict)
-```
-
----
-
-## Available Tools
-
-| Tool | Description |
-| :--- | :--- |
-| `evaluate_trade` | **Call before every trade.** Returns `allow` / `warn` / `deny`, reasons, risk score, and audit hash. Treat `deny` as a hard stop. Honeypot findings (severity=danger) from `check_token_safety` automatically force a `deny` regardless of other checks. |
-| `check_token_safety` | Honeypot / contract safety check for any ERC-20 token. Returns severity (`safe` / `warn` / `danger`) plus a sell-simulation result. **When severity=`danger`, the next `evaluate_trade` for the same contract is auto-denied.** |
-| `simulate_balance` | Read-only simulation of a wallet's ERC-20 balance after a hypothetical trade. No transaction is sent. |
-| `get_supported_assets` | The official Robinhood Chain asset registry. Resolve a symbol to its canonical contract address **before** calling `evaluate_trade`. |
-| `verify_audit_trail` | Recomputes every past decision's SHA-256 hash and verifies the hash-chain links. Returns `healthy=true` only if nothing was tampered with. |
-
----
-
-## How It Works
-
+Available Tools
+Tool	Description
+evaluate_trade	Call before every trade. Returns allow / warn / deny, reasons, risk score, and audit hash. Evaluated at a fixed Tier 1 ceiling ($5,000 notional). Treat deny as a hard stop. Honeypot findings (severity=danger) from check_token_safety automatically force a deny regardless of other checks.
+evaluate_trade_paid	Same as evaluate_trade, gated by an x402 payment. Evaluated as Tier 2 ($25,000 ceiling). Call without payment_proof first to receive the on-chain payment challenge; settle it with an x402-capable client; retry with the proof to receive a full verdict at tier=2. No COLR holdings are required — the on-chain payment is the credential.
+check_token_safety	Honeypot / contract safety check for any ERC-20 token. Returns severity (safe / warn / danger) plus a sell-simulation result. When severity=danger, the next evaluate_trade for the same contract is auto-denied.
+simulate_balance	Read-only simulation of a wallet's ERC-20 balance after a hypothetical trade. No transaction is sent.
+get_supported_assets	The official Robinhood Chain asset registry. Resolve a symbol to its canonical contract address before calling evaluate_trade.
+verify_audit_trail	Recomputes every past decision's SHA-256 hash and verifies the hash-chain links. Returns healthy=true only if nothing was tampered with.
+How It Works
 Each tool is a thin wrapper around the Collar Guardrail MCP server at:
 
-```
+text
 https://api.collarguardrail.com/mcp-http/mcp
-```
-
-The MCP transport is **Streamable HTTP** (protocol version `2025-06-18`).
+The MCP transport is Streamable HTTP (protocol version 2025-06-18).
 No API key is required for the MCP endpoint — every call is evaluated at a
-fixed **Tier 1 ceiling ($5,000 notional)**.
+fixed Tier 1 ceiling ($5,000 notional).
 
-For higher limits ($25K / $100K), use the REST API with wallet-signature
-authentication. See the [Collar agent docs](https://collarguardrail.com/agent-docs.html).
+For higher limits, use one of:
 
----
+evaluate_trade_paid — the MCP tool in this package. Evaluated as
+Tier 2 ($25,000 ceiling) for a per-call x402 fee, no COLR required.
 
-## Decision Semantics
+REST API with wallet-signature authentication — full Tier 1/2/3
+access. See the Collar agent docs.
 
-| Decision | Meaning | Action |
-| :--- | :--- | :--- |
-| `allow` | Policy passed. | Safe to execute. |
-| `warn` | Policy soft-violated. | Trade may proceed but is flagged. Reasons prefixed with `ADVISORY:` are non-blocking. |
-| `deny` | Policy hard-violated. | **Do not execute.** Reasons are blocking. Honeypot findings (severity=danger) always produce a deny. |
+Decision Semantics
+Decision	Meaning	Action
+allow	Policy passed.	Safe to execute.
+warn	Policy soft-violated.	Trade may proceed but is flagged. Reasons prefixed with ADVISORY: are non-blocking.
+deny	Policy hard-violated.	Do not execute. Reasons are blocking. Honeypot findings (severity=danger) always produce a deny.
+Safety rule: If a verdict contains an error key, no verdict was
+produced. Treat it as a hard stop. If decision == "deny", do not
+execute the trade.
 
-> **Safety rule:** If a verdict contains an `error` key, no verdict was
-> produced. Treat it as a hard stop. If `decision == "deny"`, do not
-> execute the trade.
-
----
-
-## Example: Full Pre-Trade Flow
-
-```python
+Example: Full Pre-Trade Flow
+python
 import json
 
 from langchain_collar import (
@@ -156,59 +134,67 @@ if '"decision": "deny"' in verdict:
     raise RuntimeError("Trade denied by Collar Guardrail")
 
 # Proceed with the trade only if the verdict is allow or warn
-```
+Paid Tier (x402)
+For trades above the Tier 1 ceiling ($5,000), use `evaluate_trade_paid`.
+It grants Tier 2 ($25,000 ceiling) in exchange for an on-chain x402
+payment — no COLR holdings, no signup, no API key.
 
----
+Price: $0.10 USDG per call on Robinhood Chain (eip155:4663).
+Discovery: https://api.collarguardrail.com/.well-known/x402.json.
+Facilitator: Ultravioleta DAO.
 
-## Paid Tier (x402)
+python
+from langchain_collar import evaluate_trade_paid
 
-For high-volume agent traffic, Collar exposes an x402 payment endpoint at
-`POST /api/x402/analyze` — **$0.01 USDG per call** on Robinhood Chain,
-no signup required. See the [x402 discovery document](https://api.collarguardrail.com/.well-known/x402.json).
+# First call: no payment_proof → returns the payment challenge
+challenge = evaluate_trade_paid.invoke({
+    "wallet": "0x...",
+    "asset": "NVDA",
+    "contract_address": "0x...",
+    "side": "buy",
+    "amount": 50.0,
+})
+print(challenge)  # → {status: "payment_required", network, asset, amount, pay_to, ...}
 
----
+# Settle the payment on-chain with an x402-capable client, then retry:
+verdict = evaluate_trade_paid.invoke({
+    "wallet": "0x...",
+    "asset": "NVDA",
+    "contract_address": "0x...",
+    "side": "buy",
+    "amount": 50.0,
+    "payment_proof": "<proof from the facilitator>",
+})
+# verdict now carries tier=2 with a $25,000 ceiling
+Configuration
+The package talks to the public Collar MCP endpoint
+(https://api.collarguardrail.com/mcp-http/mcp) by default. To self-host
+Collar, override the base URL before the first tool call:
 
-## Configuration
-
-The package talks to the public Collar MCP endpoint by default. To
-self-host Collar, override the base URL:
-
-```python
+python
 import langchain_collar.tools as tools
 
-tools._BASE_URL = "https://your-colar-instance.example.com"
+tools._BASE_URL = "https://your-collar-instance.example.com"
 tools._MCP_ENDPOINT = f"{tools._BASE_URL}/mcp-http/mcp"
-```
-
----
-
-## Related Resources
-
-| Resource | URL |
-| :--- | :--- |
-| **Collar Guardrail (UI)** | https://collarguardrail.com |
-| **Agent Integration Guide** | https://collarguardrail.com/agent-docs.html |
-| **MCP Server Card** | https://api.collarguardrail.com/.well-known/mcp/server-card.json |
-| **MCP Registry** | `io.github.aiguardrail/backend` |
-| **PyPI** | https://pypi.org/project/langchain-collar/ |
-
----
-
-## Contributing
-
+Related Resources
+Resource	URL
+Collar Guardrail (UI)	https://collarguardrail.com
+Agent Integration Guide	https://collarguardrail.com/agent-docs.html
+MCP Server Card	https://api.collarguardrail.com/.well-known/mcp-server-card.json
+MCP Registry	io.github.aiguardrail/backend
+Live Status	https://api.collarguardrail.com/status
+Live Latency	https://api.collarguardrail.com/latency.html
+Risk Score Methodology	https://api.collarguardrail.com/methodology.html
+PyPI	https://pypi.org/project/langchain-collar/
+Contributing
 Issues and pull requests are welcome. Please open an issue first to discuss
 larger changes.
 
----
+Disclosure
+Collar is the risk layer for autonomous finance on Robinhood Chain.
+Deterministic, auditable, and independent.
 
-## Disclosure
-
-Collar is independent third-party infrastructure. Not built, operated, or
-endorsed by Robinhood. COLR is a separate token, not affiliated with
-Robinhood Markets, Inc.
-
----
-
-## License
-
-MIT — see [LICENSE](./LICENSE).
+COLR is our own utility token, issued and operated by the Collar team.
+It is not affiliated with, endorsed by, or issued by Robinhood Markets,
+Inc. or any Robinhood entity. Robinhood Chain is a public blockchain we
+build on — using it does not imply any relationship with Robinhood.
