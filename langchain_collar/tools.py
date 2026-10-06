@@ -1,9 +1,9 @@
 """LangChain tools for Collar Guardrail.
 
 Each tool is a thin wrapper around the Collar MCP server at
-https://backendai-x4m1.onrender.com/mcp-http/mcp. The MCP server
-exposes evaluate_trade, check_token_safety, simulate_balance,
-get_supported_assets, and verify_audit_trail.
+https://api.collarguardrail.com/mcp-http/mcp. The MCP server
+exposes evaluate_trade, evaluate_trade_paid, check_token_safety,
+simulate_balance, get_supported_assets, and verify_audit_trail.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ import httpx
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
-_BASE_URL = "https://backendai-x4m1.onrender.com"
+_BASE_URL = "https://api.collarguardrail.com"
 _MCP_ENDPOINT = f"{_BASE_URL}/mcp-http/mcp"
 _HEADERS = {
     "Content-Type": "application/json",
@@ -26,6 +26,11 @@ _TIMEOUT = 30.0
 
 def _call_mcp_tool(tool_name: str, arguments: dict[str, Any]) -> str:
     """Call an MCP tool and return the text content of the response."""
+    # Drop None values so the MCP server sees only the fields the caller
+    # actually supplied. This matters for idempotency keys and
+    # payment_proof: sending an explicit null can change server behaviour.
+    arguments = {k: v for k, v in arguments.items() if v is not None}
+
     payload = {
         "jsonrpc": "2.0",
         "method": "tools/call",
@@ -81,6 +86,47 @@ class EvaluateTradeInput(BaseModel):
     )
 
 
+class EvaluateTradePaidInput(BaseModel):
+    """Input schema for the evaluate_trade_paid tool."""
+
+    wallet: str = Field(
+        ...,
+        description="EVM wallet address (0x...) the trade would execute from.",
+    )
+    asset: str = Field(
+        ...,
+        description="Asset symbol, e.g. NVDA, AAPL, TSLA, USDG.",
+    )
+    contract_address: str = Field(
+        ...,
+        description="Token contract address (0x...).",
+    )
+    side: str = Field(
+        ...,
+        description="Trade direction: 'buy' or 'sell'.",
+    )
+    amount: float = Field(
+        ...,
+        description="Quantity in token units.",
+    )
+    max_slippage_bps: int = Field(
+        default=100,
+        description="Max slippage in basis points (default 100).",
+    )
+    request_id: Optional[str] = Field(
+        default=None,
+        description="Optional idempotency key.",
+    )
+    payment_proof: Optional[str] = Field(
+        default=None,
+        description=(
+            "x402 payment proof from the facilitator. Omit on the first "
+            "call to receive a payment challenge; settle on-chain; retry "
+            "with the proof to receive a full verdict at tier=2."
+        ),
+    )
+
+
 @tool(args_schema=EvaluateTradeInput)
 def evaluate_trade(
     wallet: str,
@@ -95,7 +141,8 @@ def evaluate_trade(
 
     Call this BEFORE executing any trade. Returns allow / warn / deny
     with reasons, a 0-100 risk score, and a tamper-evident audit hash.
-    Treat a 'deny' decision as a hard stop.
+    Evaluated at a fixed Tier 1 ceiling ($5,000 notional). Treat a
+    'deny' decision as a hard stop.
     """
     return _call_mcp_tool(
         "evaluate_trade",
@@ -111,6 +158,47 @@ def evaluate_trade(
     )
 
 
+@tool(args_schema=EvaluateTradePaidInput)
+def evaluate_trade_paid(
+    wallet: str,
+    asset: str,
+    contract_address: str,
+    side: str,
+    amount: float,
+    max_slippage_bps: int = 100,
+    request_id: Optional[str] = None,
+    payment_proof: Optional[str] = None,
+) -> str:
+    """Pre-trade risk check gated by an x402 payment (Tier 2, $25,000 ceiling).
+
+    No COLR holdings are required — the on-chain payment is the credential.
+
+    FLOW:
+      1. Call WITHOUT payment_proof. The tool returns a payment challenge
+         describing the on-chain payment (network, asset, amount, payTo,
+         resource).
+      2. Settle the payment on-chain using an x402-capable client. The
+         facilitator returns a proof string.
+      3. Call again with payment_proof=<proof>. You receive a full
+         verdict with tier=2.
+
+    Treat a 'deny' decision as a hard stop.
+    """
+    return _call_mcp_tool(
+        "evaluate_trade_paid",
+        {
+            "wallet": wallet,
+            "asset": asset,
+            "contract_address": contract_address,
+            "side": side,
+            "amount": amount,
+            "max_slippage_bps": max_slippage_bps,
+            "request_id": request_id,
+            "payment_proof": payment_proof,
+        },
+    )
+
+
 @tool
 def check_token_safety(contract_address: str) -> str:
     """Honeypot / contract safety check for any ERC-20 token.
@@ -118,6 +206,9 @@ def check_token_safety(contract_address: str) -> str:
     Returns severity (safe / warn / danger), specific risk factors,
     and a sell-simulation result. Use before trading unknown memecoins
     or tokens absent from the official registry.
+
+    CRITICAL: when severity=danger, evaluate_trade auto-DENYs the trade
+    regardless of other checks.
     """
     return _call_mcp_tool(
         "check_token_safety",
@@ -177,6 +268,7 @@ def get_tools() -> list:
     """Return all Collar Guardrail tools as a list."""
     return [
         evaluate_trade,
+        evaluate_trade_paid,
         check_token_safety,
         simulate_balance,
         get_supported_assets,
