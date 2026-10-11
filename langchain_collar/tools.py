@@ -1,276 +1,61 @@
-"""LangChain tools for Collar Guardrail.
-
-Each tool is a thin wrapper around the Collar MCP server at
-https://api.collarguardrail.com/mcp-http/mcp. The MCP server
-exposes evaluate_trade, evaluate_trade_paid, check_token_safety,
-simulate_balance, get_supported_assets, and verify_audit_trail.
-"""
-
-from __future__ import annotations
-
-import json
-from typing import Any, Optional
-
 import httpx
-from langchain_core.tools import tool
-from pydantic import BaseModel, Field
+import json
+from typing import Any
 
-_BASE_URL = "https://api.collarguardrail.com"
-_MCP_ENDPOINT = f"{_BASE_URL}/mcp-http/mcp"
-_HEADERS = {
-    "Content-Type": "application/json",
-    "Accept": "application/json, text/event-stream",
-}
-_TIMEOUT = 30.0
+_MCP_ENDPOINT = "https://api.collarguardrail.com/mcp-http/mcp"
+
+# Session cache — bir kez initialize et, tekrar kullan
+_session_cache: dict[str, str] = {}
 
 
-def _call_mcp_tool(tool_name: str, arguments: dict[str, Any]) -> str:
-    """Call an MCP tool and return the text content of the response."""
-    # Drop None values so the MCP server sees only the fields the caller
-    # actually supplied. This matters for idempotency keys and
-    # payment_proof: sending an explicit null can change server behaviour.
-    arguments = {k: v for k, v in arguments.items() if v is not None}
+def _get_mcp_session() -> str:
+    """Initialize MCP session and return session ID (cached)."""
+    if "sid" in _session_cache:
+        return _session_cache["sid"]
 
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
+    }
     payload = {
         "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "langchain-collar", "version": "1.0.6"},
+        },
+    }
+    r = httpx.post(_MCP_ENDPOINT, json=payload, headers=headers, timeout=15)
+    r.raise_for_status()
+    sid = r.headers.get("mcp-session-id")
+    if not sid:
+        raise RuntimeError("MCP server did not return mcp-session-id")
+    _session_cache["sid"] = sid
+    return sid
+
+
+def _call_mcp_tool(tool_name: str, arguments: dict) -> Any:
+    sid = _get_mcp_session()
+
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
+        "mcp-session-id": sid,
+    }
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 2,
         "method": "tools/call",
         "params": {"name": tool_name, "arguments": arguments},
-        "id": 1,
     }
+    r = httpx.post(_MCP_ENDPOINT, json=payload, headers=headers, timeout=30)
+    r.raise_for_status()
 
-    with httpx.Client(timeout=_TIMEOUT) as client:
-        response = client.post(_MCP_ENDPOINT, json=payload, headers=_HEADERS)
-        response.raise_for_status()
-        data = response.json()
-
-    content = data.get("result", {}).get("content", [])
-    if content:
-        return content[0].get("text", json.dumps(data))
-    return json.dumps(data, indent=2)
-
-
-class EvaluateTradeInput(BaseModel):
-    """Input schema for the evaluate_trade tool."""
-
-    wallet: str = Field(
-        ...,
-        description="EVM wallet address (0x...) the trade would execute from.",
-    )
-    asset: str = Field(
-        ...,
-        description="Asset symbol, e.g. NVDA, AAPL, TSLA, USDG.",
-    )
-    contract_address: str = Field(
-        ...,
-        description=(
-            "Token contract address (0x...). Must match the official "
-            "registry address for that symbol, or the trade is denied "
-            "as a suspected fake token."
-        ),
-    )
-    side: str = Field(
-        ...,
-        description="Trade direction: 'buy' or 'sell'.",
-    )
-    amount: float = Field(
-        ...,
-        description="Quantity in token units — NOT a pre-computed USD value.",
-    )
-    max_slippage_bps: int = Field(
-        default=100,
-        description="Max slippage in basis points (default 100).",
-    )
-    request_id: Optional[str] = Field(
-        default=None,
-        description="Optional idempotency key.",
-    )
-
-
-class EvaluateTradePaidInput(BaseModel):
-    """Input schema for the evaluate_trade_paid tool."""
-
-    wallet: str = Field(
-        ...,
-        description="EVM wallet address (0x...) the trade would execute from.",
-    )
-    asset: str = Field(
-        ...,
-        description="Asset symbol, e.g. NVDA, AAPL, TSLA, USDG.",
-    )
-    contract_address: str = Field(
-        ...,
-        description="Token contract address (0x...).",
-    )
-    side: str = Field(
-        ...,
-        description="Trade direction: 'buy' or 'sell'.",
-    )
-    amount: float = Field(
-        ...,
-        description="Quantity in token units.",
-    )
-    max_slippage_bps: int = Field(
-        default=100,
-        description="Max slippage in basis points (default 100).",
-    )
-    request_id: Optional[str] = Field(
-        default=None,
-        description="Optional idempotency key.",
-    )
-    payment_proof: Optional[str] = Field(
-        default=None,
-        description=(
-            "x402 payment proof from the facilitator. Omit on the first "
-            "call to receive a payment challenge; settle on-chain; retry "
-            "with the proof to receive a full verdict at tier=2."
-        ),
-    )
-
-
-@tool(args_schema=EvaluateTradeInput)
-def evaluate_trade(
-    wallet: str,
-    asset: str,
-    contract_address: str,
-    side: str,
-    amount: float,
-    max_slippage_bps: int = 100,
-    request_id: Optional[str] = None,
-) -> str:
-    """Pre-trade risk check for a proposed trade on Robinhood Chain.
-
-    Call this BEFORE executing any trade. Returns allow / warn / deny
-    with reasons, a 0-100 risk score, and a tamper-evident audit hash.
-    Evaluated at a fixed Tier 1 ceiling ($5,000 notional). Treat a
-    'deny' decision as a hard stop.
-    """
-    return _call_mcp_tool(
-        "evaluate_trade",
-        {
-            "wallet": wallet,
-            "asset": asset,
-            "contract_address": contract_address,
-            "side": side,
-            "amount": amount,
-            "max_slippage_bps": max_slippage_bps,
-            "request_id": request_id,
-        },
-    )
-
-
-@tool(args_schema=EvaluateTradePaidInput)
-def evaluate_trade_paid(
-    wallet: str,
-    asset: str,
-    contract_address: str,
-    side: str,
-    amount: float,
-    max_slippage_bps: int = 100,
-    request_id: Optional[str] = None,
-    payment_proof: Optional[str] = None,
-) -> str:
-    """Pre-trade risk check gated by an x402 payment (Tier 2, $25,000 ceiling).
-
-    No COLR holdings are required — the on-chain payment is the credential.
-
-    FLOW:
-      1. Call WITHOUT payment_proof. The tool returns a payment challenge
-         describing the on-chain payment (network, asset, amount, payTo,
-         resource).
-      2. Settle the payment on-chain using an x402-capable client. The
-         facilitator returns a proof string.
-      3. Call again with payment_proof=<proof>. You receive a full
-         verdict with tier=2.
-
-    Treat a 'deny' decision as a hard stop.
-    """
-    return _call_mcp_tool(
-        "evaluate_trade_paid",
-        {
-            "wallet": wallet,
-            "asset": asset,
-            "contract_address": contract_address,
-            "side": side,
-            "amount": amount,
-            "max_slippage_bps": max_slippage_bps,
-            "request_id": request_id,
-            "payment_proof": payment_proof,
-        },
-    )
-
-
-@tool
-def check_token_safety(contract_address: str) -> str:
-    """Honeypot / contract safety check for any ERC-20 token.
-
-    Returns severity (safe / warn / danger), specific risk factors,
-    and a sell-simulation result. Use before trading unknown memecoins
-    or tokens absent from the official registry.
-
-    CRITICAL: when severity=danger, evaluate_trade auto-DENYs the trade
-    regardless of other checks.
-    """
-    return _call_mcp_tool(
-        "check_token_safety",
-        {"contract_address": contract_address},
-    )
-
-
-@tool
-def simulate_balance(
-    token_address: str,
-    holder: str,
-    delta: float,
-    decimals: int = 18,
-) -> str:
-    """Simulate a wallet's ERC-20 balance after a hypothetical trade.
-
-    Read-only: no transaction is ever sent. Uses eth_call state override.
-    """
-    return _call_mcp_tool(
-        "simulate_balance",
-        {
-            "token_address": token_address,
-            "holder": holder,
-            "delta": delta,
-            "decimals": decimals,
-        },
-    )
-
-
-@tool
-def get_supported_assets() -> str:
-    """List every asset in Collar Guardrail's official Robinhood Chain registry.
-
-    Returns symbol, contract_address, and is_native for each asset.
-    Resolve a symbol to the correct contract_address BEFORE calling
-    evaluate_trade — a mismatched address is treated as a fake-token
-    attempt and denied.
-    """
-    return _call_mcp_tool("get_supported_assets", {})
-
-
-@tool
-def verify_audit_trail(wallet: str, limit: int = 100) -> str:
-    """Verify the tamper-evident audit trail for a wallet's past decisions.
-
-    Recomputes every record's SHA-256 hash and checks the hash-chain
-    links. Returns healthy=true only if every record's hash matches
-    AND the chain is unbroken.
-    """
-    return _call_mcp_tool(
-        "verify_audit_trail",
-        {"wallet": wallet, "limit": limit},
-    )
-
-
-def get_tools() -> list:
-    """Return all Collar Guardrail tools as a list."""
-    return [
-        evaluate_trade,
-        evaluate_trade_paid,
-        check_token_safety,
-        simulate_balance,
-        get_supported_assets,
-        verify_audit_trail,
-    ]
+    # SSE response: satırlardan birinde `data: {...}` var
+    for line in r.text.splitlines():
+        if line.startswith("data: "):
+            data = json.loads(line[6:])
+            return data.get("result")
+    return json.loads(r.text)
