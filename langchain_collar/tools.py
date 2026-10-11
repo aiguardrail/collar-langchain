@@ -456,4 +456,14 @@ ALL_TOOLS = [
     verify_audit_trail,
 ]
 
-__all__ = [t.name for t in ALL_TOOLS] + ["ALL_TOOLS", "CollarError"]
+
+def get_tools() -> list:
+    """Return all Collar tools as a list, ready for a LangChain agent."""
+    return list(ALL_TOOLS)
+
+
+__all__ = [t.name for t in ALL_TOOLS] + [
+    "ALL_TOOLS",
+    "get_tools",
+    "CollarError",
+]
