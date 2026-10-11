@@ -1,6 +1,9 @@
 """LangChain integration for Collar Guardrail."""
 
 from langchain_collar.tools import (
+    ALL_TOOLS,
+    CollarError,
+    __version__,
     check_token_safety,
     evaluate_trade,
     evaluate_trade_paid,
@@ -18,4 +21,7 @@ __all__ = [
     "get_supported_assets",
     "verify_audit_trail",
     "get_tools",
+    "ALL_TOOLS",
+    "CollarError",
+    "__version__",
 ]
